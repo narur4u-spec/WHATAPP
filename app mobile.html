@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhatsApp Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f4f6f5;--card:#fff;--tx:#14211b;--mut:#66756d;--bd:#dfe6e2;--g:#128c4a}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1512;--card:#18211c;--tx:#e8f0ec;--mut:#93a39a;--bd:#2a3730}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,sans-serif}
+header{display:flex;gap:8px;align-items:center;padding:14px 16px;font-weight:700;font-size:18px}header b{color:var(--g)}.sp{flex:1}
+.wrap{display:grid;gap:14px;padding:0 14px 24px;max-width:1100px;margin:auto;grid-template-columns:minmax(0,1fr)}
+@media(min-width:860px){.wrap{grid-template-columns:360px minmax(0,1fr)}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+.box{max-width:420px;margin:50px auto}
+h3{margin:0 0 10px;font-size:15px}label{display:block;font-size:12px;color:var(--mut);margin:8px 0 3px}
+input,textarea{width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+textarea{min-height:100px}
+button{border:0;border-radius:8px;padding:9px 12px;font:inherit;font-weight:600;cursor:pointer;background:var(--g);color:#fff}
+button.s{background:var(--bg);color:var(--tx);border:1px solid var(--bd)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row>*{flex:1}
+.two{display:grid;grid-template-columns:70px 1fr;gap:8px}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:520px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--bd);white-space:nowrap}th{font-size:12px;color:var(--mut)}
+td .b{padding:6px 10px;font-size:13px;margin-right:4px}.sent{opacity:.5}
+.hint{font-size:12px;color:var(--mut);margin-top:6px}.err{color:#d33;font-size:13px;margin-top:8px}
+.prev{background:var(--bg);border:1px dashed var(--bd);border-radius:8px;padding:9px;font-size:13px;white-space:pre-wrap;margin-top:8px}
+.dev{font:700 20px monospace;letter-spacing:2px;text-align:center;padding:10px;background:var(--bg);border-radius:8px}
+[hidden]{display:none!important}
+</style></head><body>
+<script>
+window.onerror=function(m){document.body.insertAdjacentHTML('afterbegin','<p style="color:#d33;padding:14px">Error: '+m+'</p>')};
+/* PASTE YOUR PUBLIC KEY (from keygen.html) BETWEEN THE BACKTICKS */
+const PUBKEY=`{"kty":"EC","crv":"P-256","x":"gs-aNJbT7Mh4lIY5whLvwE-ttk0xKUGCL7dBnNprQr4","y":"y2EQWmoRbAtq3LrVST-jdnnOSsXFGK7ZnGg8nG2ixGg"}`;
+</script>
+
+<div id="lock" class="box card" hidden><h3>Activate your dashboard</h3>
+ <div class="hint">Send this Device ID to the seller to get your license key:</div>
+ <div class="dev" id="dev"></div>
+ <label>License key</label><textarea id="lic" placeholder="Paste license key"></textarea>
+ <div class="row"><button onclick="act()">Activate</button></div><div class="err" id="er"></div></div>
+
+<div id="app" hidden>
+<header>📲 WhatsApp <b>Dashboard</b><span class="sp"></span><span class="hint" id="info"></span></header>
+<div class="wrap"><div>
+ <div class="card"><h3>1. Add contact</h3>
+  <div class="two"><div><label>Code</label><input id="cc" value="91"></div><div><label>Number</label><input id="num" inputmode="tel"></div></div>
+  <label>Name</label><input id="nm"><div class="row"><button onclick="add()">Add contact</button></div>
+  <label style="margin-top:14px">Import contacts (CSV / Excel)</label><input type="file" id="imp" accept=".csv,.xlsx,.xls"></div>
+ <div class="card"><h3>2. Message</h3><label>Use {name} for the contact's name</label>
+  <textarea id="msg">Hello {name}, </textarea><div class="prev" id="prev"></div></div>
+ <div class="card"><h3>3. Attachments</h3><input type="file" id="att" multiple><div id="files"></div>
+  <div class="row"><button class="s" onclick="shareFiles()">Share files via WhatsApp (phone)</button></div>
+  <div class="hint">Links carry text only; attach files inside the chat after tapping Send.</div></div>
+</div>
+<div class="card"><h3>Contacts <span id="cnt"></span></h3>
+ <div class="row" style="margin:0 0 10px"><button onclick="exportX()">⬇ Export to Excel (with links)</button><button class="s" onclick="if(confirm('Clear all?')){C=[];save()}">Clear all</button></div>
+ <div class="tw"><table><thead><tr><th>Name</th><th>Number</th><th>Action</th></tr></thead><tbody id="tb"></tbody></table></div></div>
+</div></div>
+
+<script>
+const $=id=>document.getElementById(id);let C=[],F=[];
+const esc=s=>String(s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const b64=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+function devId(){let d=localStorage.getItem('wa_dev');if(!d){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789',r=crypto.getRandomValues(new Uint8Array(12));d=[0,4,8].map(i=>[...r.slice(i,i+4)].map(x=>a[x%a.length]).join('')).join('-');localStorage.setItem('wa_dev',d)}return d}
+async function verify(lic){try{const[p,s]=lic.trim().split('.');const k=await crypto.subtle.importKey('jwk',JSON.parse(PUBKEY),{name:'ECDSA',namedCurve:'P-256'},false,['verify']);
+ const ok=await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},k,b64(s),b64(p));if(!ok)return{err:'Invalid license key'};
+ const o=JSON.parse(new TextDecoder().decode(b64(p)));
+ if(o.d!=='*'&&o.d!==devId())return{err:'This key is for a different device'};
+ if(o.e<Date.now())return{err:'License expired on '+new Date(o.e).toLocaleDateString()};return{ok:o}}catch(e){return{err:'Invalid license key'}}}
+async function boot(){$('dev').textContent=devId();
+ if(!PUBKEY.trim()){$('lock').hidden=false;$('er').textContent='Seller: paste your public key in app.html first.';return}
+ const l=localStorage.getItem('wa_lic');const r=l?await verify(l):{err:''};
+ if(r.ok){$('lock').hidden=true;$('app').hidden=false;$('info').textContent=(r.ok.n||'Licensed')+' · valid till '+new Date(r.ok.e).toLocaleDateString();load()}
+ else{$('app').hidden=true;$('lock').hidden=false;$('er').textContent=r.err}}
+async function act(){const l=$('lic').value.trim();const r=await verify(l);if(r.ok){localStorage.setItem('wa_lic',l);boot()}else $('er').textContent=r.err}
+function load(){try{C=JSON.parse(localStorage.getItem('wa_c')||'[]');$('msg').value=localStorage.getItem('wa_m')||'Hello {name}, '}catch(e){}render()}
+function save(){try{localStorage.setItem('wa_c',JSON.stringify(C))}catch(e){}render()}
+function clean(n,cc){let d=String(n).replace(/\D/g,'');if(d.startsWith('00'))d=d.slice(2);else{d=d.replace(/^0+/,'');if(d.length<=10)d=cc+d}return d}
+const msgFor=c=>$('msg').value.replace(/\{name\}/gi,c.name||''),link=c=>'https://wa.me/'+c.num+'?text='+encodeURIComponent(msgFor(c));
+function add(){const n=$('num').value.trim();if(!n)return alert('Enter a number');C.push({name:$('nm').value.trim(),num:clean(n,$('cc').value.trim()||'91'),sent:false});$('num').value='';$('nm').value='';save()}
+function render(){$('cnt').textContent='('+C.length+')';
+ $('tb').innerHTML=C.map((c,i)=>`<tr class="${c.sent?'sent':''}"><td>${esc(c.name)||'-'}</td><td>+${c.num}</td><td><button class="b" onclick="send(${i})">${c.sent?'✔ Sent':'Send'}</button><button class="b s" onclick="cp(${i})">Copy link</button><button class="b s" onclick="C.splice(${i},1);save()">✕</button></td></tr>`).join('')||'<tr><td colspan=3 class="hint">No contacts yet</td></tr>';
+ $('prev').textContent='Preview: '+msgFor(C[0]||{name:'Rahul'})}
+const send=i=>{C[i].sent=true;save();window.open(link(C[i]),'_blank')};
+const cp=i=>navigator.clipboard?navigator.clipboard.writeText(link(C[i])).then(()=>alert('Link copied')):prompt('Copy:',link(C[i]));
+$('msg').addEventListener('input',()=>{try{localStorage.setItem('wa_m',$('msg').value)}catch(e){}render()});
+$('imp').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{const wb=XLSX.read(ev.target.result,{type:'array'}),rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});let a=0;
+ rows.forEach(o=>{const k=Object.keys(o),nk=k.find(x=>/name/i.test(x)),pk=k.find(x=>/(phone|mobile|number|contact|whatsapp|cell)/i.test(x))||k.find(x=>x!==nk);if(!pk||!o[pk])return;const cl=clean(o[pk],$('cc').value.trim()||'91');if(cl.length<8)return;C.push({name:nk?String(o[nk]).trim():'',num:cl,sent:false});a++});save();alert(a+' contacts imported')}catch(x){alert('Could not read file')}e.target.value=''};r.readAsArrayBuffer(f)});
+$('att').addEventListener('change',e=>{F=[...e.target.files];$('files').innerHTML=F.map(f=>'<div class="hint">📎 '+esc(f.name)+'</div>').join('')});
+async function shareFiles(){if(!F.length)return alert('Choose files first');try{if(navigator.canShare&&navigator.canShare({files:F}))await navigator.share({files:F});else alert('Not supported here. Attach inside WhatsApp after tapping Send.')}catch(e){}}
+function exportX(){if(!C.length)return alert('No contacts');const rows=[['Name','Number','Message','WhatsApp Link','Full URL']];C.forEach(c=>rows.push([c.name,'+'+c.num,msgFor(c),'',link(c)]));
+ const ws=XLSX.utils.aoa_to_sheet(rows);C.forEach((c,i)=>{ws['D'+(i+2)]={t:'s',v:'Send on WhatsApp',l:{Target:link(c)}}});ws['!cols']=[{wch:20},{wch:16},{wch:45},{wch:20},{wch:50}];
+ const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Contacts');XLSX.writeFile(wb,'whatsapp-contacts.xlsx')}
+boot();
+</script></body></html>
